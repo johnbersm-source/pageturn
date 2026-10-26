@@ -9,7 +9,7 @@ import { splitQuad, FULL_QUAD, homography } from './proc.js';
 import { ENGINES as OCR_ENGINES } from './ocr.js';
 import { tr, trp, sp, locale, setLang, langPref, LANGS } from './i18n.js';
 
-export const VERSION = '1.10.2';
+export const VERSION = '1.10.3';
 export const REPO = 'https://github.com/lorenzaferazzoli/pageturn-pdfscan';
 
 // ---------- utilità ----------
@@ -347,6 +347,8 @@ function pagesFor(blob, det, double) {
     const [l, r] = det.halves || splitQuad(det.full || det.quad);
     const a = newPage(l);
     const b = newPage(r, { origId: a.id });
+    // due pagine di un libro aperto: curve vicino alla piega, quindi si distendono da sole e si rende il testo più nitido
+    for (const p of [a, b]) Object.assign(p.params, { dewarp: true, sharpness: 70 });
     return [{ page: a, orig: blob }, { page: b, orig: null }];
   }
   // pagina singola: i bordi si rimisurano con UVDoc durante l'elaborazione (vedi queue.js)
@@ -997,6 +999,10 @@ async function camera({ replaceId } = {}) {
       await db.putProject(Object.assign(await db.getProject(P.id), { double }));
       t.classList.toggle('on', double);
       toast(double ? tr('Doppia pagina: ogni scatto diventa due pagine') : tr('Una pagina per scatto'), null, 2200);
+      if (double && !(await db.kvGet('uvLoaded2', false))) {
+        toast(tr('Scarico il modello per le pagine curve (31 MB), solo la prima volta'), null, 5000);
+        db.kvSet('uvLoaded2', true);
+      }
     } else if (a === 'native') {
       const inp = $('#pick-camera');
       inp.value = '';
