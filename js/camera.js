@@ -58,6 +58,8 @@ export class Camera {
       if (caps.focusMode && caps.focusMode.includes('continuous')) {
         await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
       }
+      // Luce forte: se molti pixel sono bruciati si abbassa l'esposizione (dove il telefono lo permette, di norma Android).
+      this.ev = caps.exposureCompensation && caps.exposureCompensation.min < 0 ? { cur: 0, ...caps.exposureCompensation } : null;
     } catch { /* non supportato */ }
     this.reset();
     this.loop();
@@ -119,10 +121,29 @@ export class Camera {
     return { g, w, h };
   }
 
+  // Regola l'esposizione secondo la quota di pixel bruciati (luce forte → testo troppo chiaro).
+  // ponytail: un passo da 0.5 EV ogni 0.7 s; PID o misura sulla sola pagina solo se questo non basta.
+  autoExposure(g, now) {
+    const e = this.ev;
+    if (!e || now - (this.evAt || 0) < 700) return;
+    this.evAt = now;
+    let hot = 0;
+    for (let i = 0; i < g.length; i += 3) if (g[i] >= 250) hot++;
+    const frac = hot / Math.ceil(g.length / 3);
+    const step = Math.max(e.step || 0.5, 0.5);
+    let next = e.cur;
+    if (frac > 0.3) next = Math.max(e.min, e.cur - step);
+    else if (frac < 0.05) next = Math.min(0, e.cur + step);
+    if (next === e.cur) return;
+    e.cur = next;
+    this.track().applyConstraints({ advanced: [{ exposureCompensation: next }] }).catch(() => { this.ev = null; });
+  }
+
   analyze() {
     if (this.busy) return;
     const f = this.grabSmall();
     if (!f) return;
+    this.autoExposure(f.g, performance.now());
     // di norma basta la regione chiara (veloce); se non trova la pagina si cercano anche le linee
     // dei bordi (sfondi chiari, libro tenuto in mano), ma solo un fotogramma su tre: negli altri due
     // si tiene l'ultimo risultato delle linee.

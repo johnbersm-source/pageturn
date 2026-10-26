@@ -248,7 +248,8 @@ export function applyFilter(img, { filter = 'whiten', brightness = 0, contrast =
       let x = v;
       if (filter === 'whiten' || filter === 'gray') {
         x = Math.min(1, Math.max(0, (v - ink) / (232 - ink)));
-        x = 255 * Math.pow(x, 1.4);
+        // luce forte: l'inchiostro risulta grigio chiaro (ink alto), quindi la curva si fa più decisa
+        x = 255 * Math.pow(x, 1.4 + Math.min(1, Math.max(0, (ink - 60) / 90)) * 1.0);
       }
       x = (x - 128) * cf + 128 + brightness * 1.1;
       lut[v] = x;
@@ -277,7 +278,7 @@ export function applyFilter(img, { filter = 'whiten', brightness = 0, contrast =
       }
       let ink = 0;
       for (let acc = 0; ink < 255 && acc + hist[ink] < tot * 0.012; ink++) acc += hist[ink];
-      lut = makeLut(Math.max(15, Math.min(110, ink)));
+      lut = makeLut(Math.max(15, Math.min(150, ink)));
     }
     // Normalizzazione dello sfondo (carta bianca, ombra della piega rimossa) e curva tonale in un'unica passata.
     const step = 4;
