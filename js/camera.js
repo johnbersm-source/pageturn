@@ -5,7 +5,25 @@ import { sharpness } from './proc.js';
 const AW = 220; // larghezza del fotogramma di analisi dal vivo
 const SHOT_W = 400; // allo scatto si rifà il riconoscimento più preciso (piega del libro compresa)
 const HOLD = 350; // ms di immobilità prima dello scatto automatico (era 650; sotto i ~250 le foto escono mosse)
-const BURST = 6; // fotogrammi valutati a ogni scatto: si tiene il più nitido
+const BURST = 6;
+const DARK = 110; // luminosità media della pagina sotto la quale si considera poca luce // fotogrammi valutati a ogni scatto: si tiene il più nitido
+
+// Poca luce (o troppa): il grigio del fotogramma occupa un intervallo stretto e il riconoscimento della pagina
+// fatica. Si allarga tra il 2° e il 98° percentile (al massimo ×3). Modifica g sul posto.
+export function stretchGray(g) {
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < g.length; i += 2) hist[g[i]]++;
+  const tot = Math.ceil(g.length / 2);
+  let lo = 0;
+  let hi = 255;
+  for (let acc = 0; lo < 255 && acc + hist[lo] < tot * 0.02; lo++) acc += hist[lo];
+  for (let acc = 0; hi > 0 && acc + hist[hi] < tot * 0.02; hi--) acc += hist[hi];
+  const range = hi - lo;
+  if (range >= 200 || range < 8) return g; // già ben esposto, o immagine vuota
+  const k = Math.min(3, 255 / range);
+  for (let i = 0; i < g.length; i++) g[i] = Math.max(0, Math.min(255, (g[i] - lo) * k));
+  return g;
+}
 const PROBE = 360; // lato del riquadro (in pixel reali) su cui si misura la nitidezza
 
 export class Camera {
@@ -118,6 +136,7 @@ export class Camera {
     const d = this.sctx.getImageData(0, 0, w, h).data;
     const g = new Uint8Array(w * h);
     for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+    stretchGray(g);
     return { g, w, h };
   }
 
@@ -215,6 +234,8 @@ export class Camera {
     best.height = H;
     const bctx = best.getContext('2d');
     let bestScore = -1;
+    let n = 0; // fotogrammi mediati nell'immagine
+    let dark = false;
     const g = new Uint8Array(side * side);
     for (let i = 0; i < BURST; i++) {
       if (i) await this.nextFrame();
@@ -223,10 +244,20 @@ export class Camera {
       const d = pctx.getImageData(0, 0, side, side).data;
       for (let k = 0, j = 0; j < g.length; k += 4, j++) g[j] = (d[k] * 77 + d[k + 1] * 150 + d[k + 2] * 29) >> 8;
       const sc = sharpness(g, side, side);
-      if (sc > bestScore) {
-        bestScore = sc;
+      let mean = 0;
+      for (let k = 0; k < g.length; k += 7) mean += g[k];
+      dark = mean / Math.ceil(g.length / 7) < DARK;
+      if (dark && n > 0 && sc >= bestScore * 0.7) {
+        // poca luce: il rumore del sensore si riduce facendo la media dei fotogrammi (pagina ferma)
+        bctx.globalAlpha = 1 / (n + 1);
         bctx.drawImage(v, 0, 0, W, H);
+        bctx.globalAlpha = 1;
+        n++;
+      } else if (sc > bestScore) {
+        bctx.drawImage(v, 0, 0, W, H);
+        n = 1;
       }
+      bestScore = Math.max(bestScore, sc);
     }
     probe.width = probe.height = 0;
     return best;
@@ -251,6 +282,7 @@ export class Camera {
       const d = sx.getImageData(0, 0, s.width, s.height).data;
       const g = new Uint8Array(s.width * s.height);
       for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+      stretchGray(g);
       let det = detectQuad(g, s.width, s.height);
       // bordi rimisurati in tanti punti su un'immagine più grande dello stesso fotogramma
       if (det) {
@@ -262,6 +294,7 @@ export class Camera {
         const db = sx.getImageData(0, 0, s.width, s.height).data;
         const gb = new Uint8Array(s.width * s.height);
         for (let i = 0, j = 0; j < gb.length; i += 4, j++) gb[j] = (db[i] * 77 + db[i + 1] * 150 + db[i + 2] * 29) >> 8;
+        stretchGray(gb);
         det = refineDetection(gb, s.width, s.height, det);
       }
       det = det || (quad ? { quad, full: quad, halves: null, spine: null } : null);
