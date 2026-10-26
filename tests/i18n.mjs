@@ -23,7 +23,7 @@ for (const m of src.matchAll(/plural\([^,]+,\s*'([^']*)',\s*'([^']*)'\)/g)) keys
 for (const m of src.match(/FILTER_LIST = .*/)[0].matchAll(/\['\w+', '([^']+)'\]/g)) keys.add(m[1]);
 for (const m of src.matchAll(/label: '([^']+)'/g)) keys.add(m[1]);
 for (const m of src.matchAll(/detail: '([^']+)'/g)) keys.add(m[1]);
-const missing = [...keys].filter((k) => !T[k] || !T[k][0] || !T[k][1]);
+const missing = [...keys].filter((k) => !T[k] || !T[k][0] || !T[k][1] || !T[k][2]);
 check(missing.length === 0, `tutte le ${keys.size} frasi tradotte${missing.length ? `; mancano: ${missing.join(' / ')}` : ''}`);
 const vars = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
 const badVars = Object.entries(T).filter(([k, v]) => (Array.isArray(v[0]) ? v.flat() : v).some((x) => (k.includes('|') ? !x.includes('{n}') : vars(x) !== vars(k))));

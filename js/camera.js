@@ -4,6 +4,7 @@ import { sharpness } from './proc.js';
 
 const AW = 220; // larghezza del fotogramma di analisi dal vivo
 const SHOT_W = 400; // allo scatto si rifà il riconoscimento più preciso (piega del libro compresa)
+const HOLD = 350; // ms di immobilità prima dello scatto automatico (era 650; sotto i ~250 le foto escono mosse)
 const BURST = 6; // fotogrammi valutati a ogni scatto: si tiene il più nitido
 const PROBE = 360; // lato del riquadro (in pixel reali) su cui si misura la nitidezza
 
@@ -154,7 +155,7 @@ export class Camera {
           this.phase = 'steady';
           this.steadySince = now;
         }
-        progress = Math.min(1, (now - this.steadySince) / 650);
+        progress = Math.min(1, (now - this.steadySince) / HOLD);
         if (this.auto && progress >= 1) {
           this.shoot(quad, f.g);
           progress = 0;
